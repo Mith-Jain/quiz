@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Cloud Quiz Game</title>
+    <script src="https://cdn.socket.io/4.7.2/socketio.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f4f7f6; color: #333; }
+        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .hidden { display: none; }
+        input, button { width: 100%; padding: 12px; margin: 10px 0; border-radius: 4px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+        button { background: #ff4757; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #ff6b81; }
+        .option-btn { background: #f1f2f6; color: black; font-weight: normal; text-align: left; margin: 5px 0; border: 1px solid #ced6e0; }
+        .option-btn:hover { background: #dfe4ea; }
+        .option-btn.selected { background: #2ed573; color: white; border-color: #26af5f; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f1f2f6; }
+    </style>
+</head>
+<body>
+
+    <h1 style="text-align: center; color: #2f3542;">🏆 Live Quiz Arena</h1>
+
+    <div id="join-card" class="card">
+        <h3>Choose a Nickname to Play:</h3>
+        <input type="text" id="username" placeholder="Type your name here...">
+        <button onclick="joinGame()">Enter Lobby</button>
+    </div>
+
+    <div id="quiz-card" class="card hidden">
+        <h3 id="question-text">Loading question...</h3>
+        <div id="options-container"></div>
+        <button id="next-btn" onclick="nextQuestion()" style="margin-top: 15px; background: #70a1ff;">Next Question</button>
+    </div>
+
+    <div id="result-card" class="card hidden">
+        <h2>Quiz Completed! 🏁</h2>
+        <h3 id="final-score">Calculating your final score...</h3>
+        
+        <h3>📊 Current Standings</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Player Name</th>
+                    <th>Score</th>
+                </tr>
+            </thead>
+            <tbody id="leaderboard-body"></tbody>
+        </table>
+        <button onclick="location.reload()" style="background:#5352ed; margin-top:20px;">Try Again</button>
+    </div>
+
+    <script>
+        // Connects dynamically to the Render server url it is hosted on
+        const socket = io();
+        let username = "";
+        let questions = [];
+        let currentQuestionIndex = 0;
+        let userAnswers = [];
+        let selectedOptionIndex = null;
+
+        function joinGame() {
+            username = document.getElementById('username').value.trim();
+            if (!username) return alert("Please type a name!");
+            
+            socket.emit('join_game', { username: username });
+            document.getElementById('join-card').classList.add('hidden');
+        }
+
+        socket.on('start_quiz', (data) => {
+            questions = data.questions;
+            currentQuestionIndex = 0;
+            userAnswers = [];
+            document.getElementById('quiz-card').classList.remove('hidden');
+            showQuestion();
+        });
+
+        function showQuestion() {
+            selectedOptionIndex = null;
+            const q = questions[currentQuestionIndex];
+            document.getElementById('question-text').innerText = `Question ${currentQuestionIndex + 1}: ${q.question}`;
+            
+            const container = document.getElementById('options-container');
+            container.innerHTML = "";
+            
+            q.options.forEach((option, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'option-btn';
+                btn.innerText = option;
+                btn.onclick = () => selectOption(index, btn);
+                container.appendChild(btn);
+            });
+
+            const nextBtn = document.getElementById('next-btn');
+            if (currentQuestionIndex === questions.length - 1) {
+                nextBtn.innerText = "Submit My Answers";
+                nextBtn.style.background = "#2ed573";
+            } else {
+                nextBtn.innerText = "Next Question";
+                nextBtn.style.background = "#70a1ff";
+            }
+        }
+
+        function selectOption(index, element) {
+            selectedOptionIndex = index;
+            document.querySelectorAll('.option-btn').forEach(btn => btn.classList.remove('selected'));
+            element.classList.add('selected');
+        }
+
+        function nextQuestion() {
+            if (selectedOptionIndex === null) {
+                return alert("Please pick an option first!");
+            }
+            
+            userAnswers.push(selectedOptionIndex);
+            
+            if (currentQuestionIndex < questions.length - 1) {
+                currentQuestionIndex++;
+                showQuestion();
+            } else {
+                socket.emit('submit_score', { username: username, answers: userAnswers });
+                document.getElementById('quiz-card').classList.add('hidden');
+                document.getElementById('result-card').classList.remove('hidden');
+            }
+        }
+
+        socket.on('quiz_results', (data) => {
+            document.getElementById('final-score').innerText = `Your Score: ${data.score} / ${data.total}`;
+        });
+
+        socket.on('update_leaderboard', (data) => {
+            const tbody = document.getElementById('leaderboard-body');
+            tbody.innerHTML = "";
+            data.leaderboard.forEach((player, index) => {
+                const row = `<tr>
+                    <td>${index + 1}</td>
+                    <td>${player[0]} ${player[0] === username ? '<strong>(You)</strong>' : ''}</td>
+                    <td>${player[1]} points</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        });
+    </script>
+</body>
+</html>
